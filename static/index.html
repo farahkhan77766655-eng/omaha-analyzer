@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omaha Auto Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green:#0d6b3a; --felt-dark:#072d18; --gold:#d4a843; --gold-light:#f0c84e;
+    --red:#c0392b; --white:#f5f0e8; --card-white:#fdfaf4; --dim:#8a9e8f;
+    --panel:rgba(10,20,14,0.92);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--felt-dark);color:var(--white);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden;}
+  body::before{content:'';position:fixed;inset:0;
+    background:radial-gradient(ellipse 80% 60% at 50% 40%,#0d6b3a1a,transparent),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23061a0c'/%3E%3Crect x='0' y='0' width='1' height='1' fill='%230a2a14' opacity='0.5'/%3E%3C/svg%3E");
+    pointer-events:none;z-index:0;}
+
+  .app{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:16px;}
+
+  header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1d4d2a;padding-bottom:12px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .logo{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:3px;color:var(--gold);}
+  .header-right{display:flex;gap:10px;align-items:center;}
+  .badge{background:var(--red);color:#fff;font-size:.65rem;font-weight:600;padding:3px 10px;border-radius:20px;letter-spacing:1.5px;}
+  .badge.live{background:#27ae60;animation:none;}
+  .badge.connecting{background:var(--gold);color:#000;animation:blink 1s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+
+  .layout{display:grid;grid-template-columns:1fr 400px;gap:18px;}
+  @media(max-width:860px){.layout{grid-template-columns:1fr;}}
+
+  /* ── Camera area ── */
+  .feed-area{display:flex;flex-direction:column;gap:12px;}
+
+  .server-input-row{display:flex;gap:8px;align-items:center;}
+  .server-input{flex:1;background:rgba(255,255,255,0.05);border:1px solid #2a5c3c;border-radius:8px;
+    padding:8px 12px;color:var(--white);font-family:'DM Mono',monospace;font-size:.8rem;outline:none;}
+  .server-input:focus{border-color:var(--gold);}
+  .connect-btn{padding:8px 16px;border-radius:8px;border:1px solid #2a6040;
+    background:rgba(13,107,58,0.25);color:var(--gold);cursor:pointer;
+    font-family:'DM Mono',monospace;font-size:.75rem;white-space:nowrap;transition:.2s;}
+  .connect-btn:hover{background:rgba(13,107,58,0.5);}
+  .connect-btn.active{background:var(--red);border-color:var(--red);color:#fff;}
+
+  .camera-box{background:#000;border-radius:12px;overflow:hidden;border:2px solid #1d4d2a;
+    position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;}
+  #localVideo{width:100%;height:100%;object-fit:cover;display:none;}
+  canvas#debugCanvas{width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0;}
+  .feed-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;color:var(--dim);font-size:.9rem;text-align:center;padding:20px;}
+  .feed-placeholder .icon{font-size:3rem;opacity:.4;}
+  .start-cam-btn{background:var(--gold);color:#000;border:none;padding:10px 22px;border-radius:8px;
+    cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:.2s;}
+  .start-cam-btn:hover{background:var(--gold-light);}
+
+  .detected-overlay{position:absolute;bottom:0;left:0;right:0;
+    background:linear-gradient(transparent,rgba(0,0,0,0.82));
+    padding:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;pointer-events:none;}
+  .detected-overlay>*{pointer-events:auto;}
+  .det-label{color:var(--dim);font-size:.6rem;font-family:'DM Mono',monospace;width:100%;}
+  .det-card{background:var(--card-white);border-radius:5px;padding:3px 8px;
+    font-family:'DM Mono',monospace;font-size:.82rem;font-weight:500;
+    box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer;border:2px solid transparent;
+    transition:.15s;animation:popIn .25s ease;}
+  .det-card.red{color:var(--red);}  .det-card.black{color:#111;}
+  .det-card.assigned{border-color:var(--gold);opacity:.6;}
+  .det-card:hover:not(.assigned){transform:scale(1.08);}
+  @keyframes popIn{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+
+  .status-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;
+    background:var(--panel);border-radius:8px;border:1px solid #1d4d2a;
+    font-family:'DM Mono',monospace;font-size:.75rem;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0;}
+  .dot.green{background:#27ae60;animation:pulse 1.5s infinite;}
+  .dot.red{background:var(--red);}
+  .dot.yellow{background:var(--gold);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+  .fps-info{margin-left:auto;color:var(--dim);font-size:.7rem;}
+
+  /* ── Right panel ── */
+  .panel{display:flex;flex-direction:column;gap:14px;}
+  .section{background:var(--panel);border:1px solid #1d4d2a;border-radius:12px;padding:14px;}
+  .section-title{font-family:'Bebas Neue',sans-serif;font-size:.95rem;letter-spacing:2px;
+    color:var(--gold);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .section-title span{width:5px;height:5px;border-radius:50%;background:var(--gold);}
+
+  .player-toggle{display:flex;gap:6px;}
+  .ptbtn{flex:1;padding:7px;border-radius:7px;border:1px solid #2a6040;
+    background:transparent;color:var(--dim);cursor:pointer;
+    font-family:'DM Mono',monospace;font-size:.8rem;transition:.2s;}
+  .ptbtn.active{background:var(--green);color:var(--white);border-color:var(--green);}
+  .ptbtn:hover:not(.active){border-color:var(--gold);color:var(--gold);}
+
+  .players-grid{display:flex;flex-direction:column;gap:10px;}
+  .player-row{background:rgba(255,255,255,0.03);border-radius:9px;padding:10px;border:1px solid #1a3d26;}
+  .player-name{font-size:.7rem;letter-spacing:1px;color:var(--dim);margin-bottom:7px;font-family:'DM Mono',monospace;}
+  .card-inputs{display:flex;gap:5px;flex-wrap:wrap;}
+
+  .card-slot{width:42px;height:58px;border-radius:5px;border:1.5px dashed #2a5c3c;
+    background:rgba(255,255,255,0.04);cursor:pointer;position:relative;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'DM Mono',monospace;transition:.2s;user-select:none;}
+  .card-slot:hover{border-color:var(--gold);}
+  .card-slot.filled{background:var(--card-white);border-style:solid;border-color:#ccc;}
+  .card-slot.auto{border-color:#27ae60;box-shadow:0 0 10px rgba(39,174,96,.3);}
+  .card-val{font-weight:500;font-size:.72rem;line-height:1.1;text-align:center;}
+  .card-val.red{color:var(--red);}  .card-val.black{color:#111;}
+  .remove-btn{position:absolute;top:-5px;right:-5px;width:14px;height:14px;
+    background:var(--red);border-radius:50%;font-size:.55rem;color:#fff;
+    display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s;cursor:pointer;}
+  .card-slot:hover .remove-btn{opacity:1;}
+
+  .community-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .street-label{font-size:.65rem;color:var(--dim);font-family:'DM Mono',monospace;min-width:45px;}
+
+  .auto-assign-btn{width:100%;padding:8px;border-radius:7px;
+    background:rgba(39,174,96,.1);border:1px solid #27ae60;color:#27ae60;
+    font-family:'DM Sans',sans-serif;font-size:.8rem;cursor:pointer;transition:.2s;margin-top:10px;}
+  .auto-assign-btn:hover{background:rgba(39,174,96,.2);}
+  .auto-assign-btn:disabled{opacity:.35;cursor:not-allowed;}
+
+  /* results */
+  .results{display:flex;flex-direction:column;gap:9px;}
+  .result-row{display:flex;align-items:center;gap:9px;}
+  .result-name{font-family:'DM Mono',monospace;font-size:.72rem;color:var(--dim);min-width:55px;}
+  .bar-wrap{flex:1;height:18px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;}
+  .bar{height:100%;border-radius:4px;transition:width .6s cubic-bezier(.4,0,.2,1);min-width:2px;}
+  .bar.p1{background:linear-gradient(90deg,#27ae60,#2ecc71);}
+  .bar.p2{background:linear-gradient(90deg,#2980b9,#3498db);}
+  .bar.p3{background:linear-gradient(90deg,#8e44ad,#9b59b6);}
+  .bar.p4{background:linear-gradient(90deg,#d35400,#e67e22);}
+  .result-pct{font-family:'Bebas Neue',sans-serif;font-size:1rem;color:var(--gold);min-width:42px;text-align:right;}
+  .winner-badge{background:var(--gold);color:#000;font-size:.55rem;padding:2px 5px;border-radius:3px;font-weight:700;letter-spacing:1px;}
+
+  .calc-btn{width:100%;padding:11px;border-radius:9px;
+    background:linear-gradient(135deg,#1a7a40,#0d6b3a);border:1px solid #27ae60;
+    color:var(--white);font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:2px;cursor:pointer;transition:.2s;}
+  .calc-btn:hover{background:linear-gradient(135deg,#27ae60,#1a7a40);}
+  .reset-btn{width:100%;padding:7px;border-radius:7px;background:transparent;
+    border:1px solid #2a3d30;color:var(--dim);font-family:'DM Sans',sans-serif;
+    font-size:.8rem;cursor:pointer;transition:.2s;margin-top:-6px;}
+  .reset-btn:hover{border-color:var(--red);color:var(--red);}
+  .info-msg{color:var(--dim);font-size:.78rem;text-align:center;font-style:italic;}
+
+  /* modal */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:100;
+    display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+  .modal-backdrop.hidden{display:none;}
+  .modal{background:#0e2318;border:1px solid #2a6040;border-radius:14px;padding:18px;width:330px;max-width:95vw;}
+  .modal-title{font-family:'Bebas Neue',sans-serif;font-size:1rem;color:var(--gold);letter-spacing:2px;margin-bottom:12px;}
+  .rank-grid{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;}
+  .suit-grid{display:flex;gap:7px;margin-bottom:14px;}
+  .rank-btn,.suit-btn{padding:6px 8px;border-radius:5px;border:1px solid #2a5c3c;
+    background:transparent;color:var(--white);cursor:pointer;font-family:'DM Mono',monospace;
+    font-size:.75rem;transition:.15s;min-width:32px;text-align:center;}
+  .rank-btn.active,.suit-btn.active{background:var(--green);border-color:var(--green);}
+  .suit-btn.red{color:#e74c3c;}
+  .rank-btn:disabled,.suit-btn:disabled{opacity:.25;cursor:not-allowed;}
+  .modal-actions{display:flex;gap:7px;}
+  .btn-confirm{flex:1;background:var(--gold);color:#000;border:none;padding:9px;
+    border-radius:7px;font-family:'DM Sans',sans-serif;font-weight:500;cursor:pointer;}
+  .btn-confirm:hover{background:var(--gold-light);}
+  .btn-cancel{padding:9px 14px;border-radius:7px;border:1px solid #2a5c3c;
+    background:transparent;color:var(--dim);cursor:pointer;}
+  .btn-cancel:hover{border-color:var(--red);color:var(--red);}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">♠ Omaha Auto Analyzer</div>
+    <div class="header-right">
+      <div id="badge" class="badge">● OFFLINE</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- LEFT: Camera + detection feed -->
+    <div class="feed-area">
+
+      <!-- Server URL input -->
+      <div class="server-input-row">
+        <input class="server-input" id="serverUrl"
+          placeholder="https://your-app.onrender.com  (Render URL)"
+          value="" />
+        <button class="connect-btn" id="connectBtn">Connect</button>
+      </div>
+
+      <!-- Camera box -->
+      <div class="camera-box" id="cameraBox">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <canvas id="debugCanvas"></canvas>
+        <div class="feed-placeholder" id="placeholder">
+          <div class="icon">🃏</div>
+          <p>Enter your Render URL above, then start the camera</p>
+          <button class="start-cam-btn" id="startCamBtn">Start Camera</button>
+        </div>
+        <div class="detected-overlay" id="detectedOverlay"></div>
+      </div>
+
+      <!-- Status -->
+      <div class="status-bar">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText" style="color:var(--dim)">Enter your Render server URL to begin</span>
+        <span class="fps-info" id="fpsInfo"></span>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Controls -->
+    <div class="panel">
+
+      <div class="section">
+        <div class="section-title"><span></span> Players</div>
+        <div class="player-toggle">
+          <button class="ptbtn" data-n="2">2</button>
+          <button class="ptbtn active" data-n="3">3</button>
+          <button class="ptbtn" data-n="4">4</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title"><span></span> Hole Cards (4 each)</div>
+        <div class="players-grid" id="playersGrid"></div>
+        <button class="auto-assign-btn" id="autoAssignBtn" disabled>⚡ Auto-Assign Detected Cards</button>
+      </div>
+
+      <div class="section">
+        <div class="section-title"><span></span> Community Cards</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <div class="community-row"><span class="street-label">FLOP</span><div class="card-inputs" id="flop"></div></div>
+          <div class="community-row"><span class="street-label">TURN</span><div class="card-inputs" id="turn"></div></div>
+          <div class="community-row"><span class="street-label">RIVER</span><div class="card-inputs" id="river"></div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title"><span></span> Win Probability</div>
+        <div class="results" id="results"><p class="info-msg">Enter cards and press Calculate</p></div>
+      </div>
+
+      <button class="calc-btn" id="calcBtn">⟳ Calculate Odds</button>
+      <button class="reset-btn" id="resetBtn">Clear All</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card Picker Modal -->
+<div class="modal-backdrop hidden" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-title">Select Card</div>
+    <div class="rank-grid" id="rankGrid"></div>
+    <div class="suit-grid" id="suitGrid"></div>
+    <div class="modal-actions">
+      <button class="btn-confirm" id="btnConfirm">Confirm</button>
+      <button class="btn-cancel" id="btnCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden canvas for frame capture -->
+<canvas id="captureCanvas" style="display:none"></canvas>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+const RANKS = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
+const SUITS = [
+  {sym:'♠',name:'s',cls:'black'},{sym:'♥',name:'h',cls:'red'},
+  {sym:'♦',name:'d',cls:'red'},{sym:'♣',name:'c',cls:'black'}
+];
+const RANK_ORDER = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
+
+// ── State ────────────────────────────────────────────────────────────────────
+let numPlayers    = 3;
+let playerCards   = {};
+let communityCards= {flop:[null,null,null],turn:[null],river:[null]};
+let detectedCards = [];
+let assignedCards = new Set();
+let serverUrl     = '';
+let cameraStream  = null;
+let detecting     = false;
+let detectInterval= null;
+let frameCount    = 0, fpsTime = Date.now();
+let pickerTarget  = null, pickerRank = null, pickerSuit = null;
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const video        = document.getElementById('localVideo');
+const debugCanvas  = document.getElementById('debugCanvas');
+const captureCanvas= document.getElementById('captureCanvas');
+const overlay      = document.getElementById('detectedOverlay');
+const badge        = document.getElementById('badge');
+const statusDot    = document.getElementById('statusDot');
+const statusText   = document.getElementById('statusText');
+const fpsInfo      = document.getElementById('fpsInfo');
+const placeholder  = document.getElementById('placeholder');
+const autoAssignBtn= document.getElementById('autoAssignBtn');
+
+// ── Server connect ────────────────────────────────────────────────────────────
+document.getElementById('connectBtn').addEventListener('click', toggleConnect);
+
+async function toggleConnect() {
+  if (detecting) {
+    stopDetection();
+    document.getElementById('connectBtn').textContent = 'Connect';
+    document.getElementById('connectBtn').classList.remove('active');
+    setBadge('offline'); setStatus('','Disconnected');
+    return;
+  }
+  const url = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  if (!url) { setStatus('red','Enter your Render URL first'); return; }
+  serverUrl = url;
+  setBadge('connecting'); setStatus('yellow','Testing connection…');
+
+  try {
+    const r = await fetch(`${serverUrl}/health`, {signal: AbortSignal.timeout(6000)});
+    const d = await r.json();
+    if (d.ok) {
+      setStatus('green', 'Server connected ✓ — start camera to begin detection');
+      setBadge('live');
+      document.getElementById('connectBtn').textContent = 'Disconnect';
+      document.getElementById('connectBtn').classList.add('active');
+      if (cameraStream) startDetection();
+    } else {
+      throw new Error('Bad response');
+    }
+  } catch(e) {
+    setStatus('red', 'Cannot reach server — check URL and that Render service is running');
+    setBadge('offline'); serverUrl = '';
+  }
+}
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+document.getElementById('startCamBtn').addEventListener('click', startCamera);
+
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode:'environment', width:{ideal:1280}, height:{ideal:720}}
+    });
+    video.srcObject = cameraStream;
+    video.style.display = 'block';
+    placeholder.style.display = 'none';
+    if (serverUrl) startDetection();
+    else setStatus('yellow','Camera ready — connect to server to enable auto-detection');
+  } catch(e) {
+    setStatus('red','Camera access denied');
+  }
+}
+
+// ── Detection loop ────────────────────────────────────────────────────────────
+function startDetection() {
+  if (detecting) return;
+  detecting = true;
+  debugCanvas.style.display = 'block';
+  setStatus('green', 'Auto-detecting cards…');
+  autoAssignBtn.disabled = false;
+  detectInterval = setInterval(sendFrame, 250); // 4 fps to server
+}
+
+function stopDetection() {
+  detecting = false;
+  clearInterval(detectInterval);
+  debugCanvas.style.display = 'none';
+  autoAssignBtn.disabled = true;
+}
+
+async function sendFrame() {
+  if (!video.readyState || video.readyState < 2) return;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return;
+
+  captureCanvas.width = w; captureCanvas.height = h;
+  const ctx = captureCanvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  const b64 = captureCanvas.toDataURL('image/jpeg', 0.75);
+
+  try {
+    const r = await fetch(`${serverUrl}/detect`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({frame: b64}),
+      signal: AbortSignal.timeout(5000)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      // draw debug frame on canvas overlay
+      if (d.debug) {
+        const img = new Image();
+        img.onload = () => {
+          debugCanvas.width = w; debugCanvas.height = h;
+          debugCanvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        };
+        img.src = 'data:image/jpeg;base64,' + d.debug;
+      }
+      detectedCards = d.cards || [];
+      renderDetectedOverlay();
+
+      // FPS counter
+      frameCount++;
+      const now = Date.now();
+      if (now - fpsTime > 2000) {
+        fpsInfo.textContent = `${(frameCount / ((now-fpsTime)/1000)).toFixed(1)} fps`;
+        frameCount = 0; fpsTime = now;
+      }
+    }
+  } catch(e) {
+    setStatus('red','Detection error — check server');
+  }
+}
+
+// ── Detected card overlay ─────────────────────────────────────────────────────
+function renderDetectedOverlay() {
+  overlay.innerHTML = '';
+  if (!detectedCards.length) return;
+  const lbl = document.createElement('span');
+  lbl.className = 'det-label';
+  lbl.textContent = 'DETECTED — click to assign:';
+  overlay.appendChild(lbl);
+
+  detectedCards.forEach(card => {
+    const div = document.createElement('div');
+    div.className = `det-card ${card.cls}` + (assignedCards.has(card.key) ? ' assigned' : '');
+    div.textContent = card.rank + (card.sym || card.suit);
+    div.title = assignedCards.has(card.key) ? 'Already assigned' : 'Click to assign to next empty slot';
+    if (!assignedCards.has(card.key)) div.addEventListener('click', () => assignCard(card.key));
+    overlay.appendChild(div);
+  });
+}
+
+function assignCard(key) {
+  if (assignedCards.has(key)) return;
+  // fill players first
+  for (let p = 1; p <= numPlayers; p++) {
+    if (!playerCards[p]) playerCards[p] = [null,null,null,null];
+    for (let i = 0; i < 4; i++) {
+      if (!playerCards[p][i]) {
+        playerCards[p][i] = key; assignedCards.add(key);
+        renderAll(); renderDetectedOverlay(); return;
+      }
+    }
+  }
+  // then community
+  for (const street of ['flop','turn','river']) {
+    for (let i = 0; i < communityCards[street].length; i++) {
+      if (!communityCards[street][i]) {
+        communityCards[street][i] = key; assignedCards.add(key);
+        renderAll(); renderDetectedOverlay(); return;
+      }
+    }
+  }
+}
+
+autoAssignBtn.addEventListener('click', () => detectedCards.forEach(c => assignCard(c.key)));
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function setBadge(state) {
+  badge.className = 'badge';
+  if (state==='live') { badge.textContent='● LIVE'; badge.classList.add('live'); }
+  else if (state==='connecting') { badge.textContent='● CONNECTING'; badge.classList.add('connecting'); }
+  else { badge.textContent='● OFFLINE'; }
+}
+function setStatus(color, text) {
+  statusDot.className = 'dot' + (color ? ' '+color : '');
+  statusText.textContent = text;
+}
+function getUsedCards() {
+  const s = new Set();
+  for (let p=1;p<=numPlayers;p++) (playerCards[p]||[]).forEach(c=>c&&s.add(c));
+  ['flop','turn','river'].forEach(st=>communityCards[st].forEach(c=>c&&s.add(c)));
+  return s;
+}
+function suitOf(key) { return SUITS.find(s=>key&&key.endsWith(s.name)); }
+function rankOf(key) { return key?key.slice(0,-1):''; }
+
+// ── Render UI ─────────────────────────────────────────────────────────────────
+function makeSlot(card, onClick, onRemove, isAuto=false) {
+  const div = document.createElement('div');
+  div.className = 'card-slot'+(card?' filled':'')+(isAuto?' auto':'');
+  if (card) {
+    const s=suitOf(card), cls=s?s.cls:'black', sym=s?s.sym:'';
+    div.innerHTML=`<div class="card-val ${cls}">${rankOf(card)}<br>${sym}</div><div class="remove-btn">✕</div>`;
+    div.querySelector('.remove-btn').addEventListener('click',e=>{e.stopPropagation();onRemove();});
+  } else {
+    div.innerHTML=`<span style="color:#2a5c3c;font-size:.9rem">+</span>`;
+  }
+  div.addEventListener('click',onClick);
+  return div;
+}
+
+function renderAll() { renderPlayers(); renderCommunity(); }
+
+function renderPlayers() {
+  const grid=document.getElementById('playersGrid'); grid.innerHTML='';
+  for (let p=1;p<=numPlayers;p++) {
+    if (!playerCards[p]) playerCards[p]=[null,null,null,null];
+    const row=document.createElement('div'); row.className='player-row';
+    row.innerHTML=`<div class="player-name">PLAYER ${p}</div>`;
+    const ci=document.createElement('div'); ci.className='card-inputs';
+    for (let i=0;i<4;i++) {
+      const pi=p,idx=i,isAuto=playerCards[p][i]&&assignedCards.has(playerCards[p][i]);
+      ci.appendChild(makeSlot(playerCards[p][i],
+        ()=>openPicker({type:'player',player:pi,idx}),
+        ()=>{if(playerCards[pi][idx])assignedCards.delete(playerCards[pi][idx]);playerCards[pi][idx]=null;renderAll();renderDetectedOverlay();},
+        isAuto));
+    }
+    row.appendChild(ci); grid.appendChild(row);
+  }
+}
+
+function renderCommunity() {
+  ['flop','turn','river'].forEach(st=>{
+    const cont=document.getElementById(st); cont.innerHTML='';
+    communityCards[st].forEach((card,i)=>cont.appendChild(makeSlot(card,
+      ()=>openPicker({type:'community',street:st,idx:i}),
+      ()=>{if(communityCards[st][i])assignedCards.delete(communityCards[st][i]);communityCards[st][i]=null;renderAll();renderDetectedOverlay();}
+    )));
+  });
+}
+
+// ── Card picker ───────────────────────────────────────────────────────────────
+function openPicker(target) {
+  pickerTarget=target; pickerRank=null; pickerSuit=null;
+  document.getElementById('modalBackdrop').classList.remove('hidden');
+  renderPicker();
+}
+function renderPicker() {
+  const used=getUsedCards();
+  const rg=document.getElementById('rankGrid'); rg.innerHTML='';
+  RANKS.forEach(r=>{
+    const b=document.createElement('button');
+    b.className='rank-btn'+(pickerRank===r?' active':'');
+    b.textContent=r;
+    if(SUITS.every(s=>used.has(r+s.name)))b.disabled=true;
+    b.addEventListener('click',()=>{pickerRank=r;renderPicker();});
+    rg.appendChild(b);
+  });
+  const sg=document.getElementById('suitGrid'); sg.innerHTML='';
+  SUITS.forEach(s=>{
+    const b=document.createElement('button');
+    b.className='suit-btn '+s.cls+(pickerSuit===s.name?' active':'');
+    b.textContent=s.sym+' '+s.name.toUpperCase();
+    if(pickerRank&&used.has(pickerRank+s.name))b.disabled=true;
+    b.addEventListener('click',()=>{pickerSuit=s.name;renderPicker();});
+    sg.appendChild(b);
+  });
+}
+document.getElementById('btnConfirm').addEventListener('click',()=>{
+  if(!pickerRank||!pickerSuit)return;
+  const card=pickerRank+pickerSuit, t=pickerTarget;
+  if(t.type==='player')playerCards[t.player][t.idx]=card;
+  else communityCards[t.street][t.idx]=card;
+  document.getElementById('modalBackdrop').classList.add('hidden');
+  renderAll();
+});
+document.getElementById('btnCancel').addEventListener('click',()=>document.getElementById('modalBackdrop').classList.add('hidden'));
+
+// ── Player count toggle ───────────────────────────────────────────────────────
+document.querySelectorAll('.ptbtn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    numPlayers=parseInt(btn.dataset.n);
+    document.querySelectorAll('.ptbtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    for(let p=numPlayers+1;p<=4;p++)delete playerCards[p];
+    renderAll();
+    document.getElementById('results').innerHTML='<p class="info-msg">Enter cards and press Calculate</p>';
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  for(let p=1;p<=4;p++)playerCards[p]=[null,null,null,null];
+  communityCards={flop:[null,null,null],turn:[null],river:[null]};
+  assignedCards.clear(); renderAll(); renderDetectedOverlay();
+  document.getElementById('results').innerHTML='<p class="info-msg">Enter cards and press Calculate</p>';
+});
+
+// ── Poker Engine (Monte Carlo) ────────────────────────────────────────────────
+function parseCard(c){return{rank:RANK_ORDER[c[0]],suit:c[1]};}
+function buildDeck(ex){const d=[];for(const r of Object.keys(RANK_ORDER))for(const s of['s','h','d','c'])if(!ex.has(r+s))d.push(r+s);return d;}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+function combinations(arr,k){if(k===0)return[[]];if(arr.length<k)return[];const[f,...r]=arr;return[...combinations(r,k-1).map(c=>[f,...c]),...combinations(r,k)];}
+
+function evaluate5(cards){
+  const parsed=cards.map(parseCard);
+  const ranks=parsed.map(c=>c.rank).sort((a,b)=>b-a);
+  const suits=parsed.map(c=>c.suit);
+  const flush=suits.every(s=>s===suits[0]);
+  const freq={};ranks.forEach(r=>freq[r]=(freq[r]||0)+1);
+  const counts=Object.values(freq).sort((a,b)=>b-a);
+  const uR=Object.keys(freq).map(Number).sort((a,b)=>b-a);
+  let st=false,stH=0;
+  if(uR.length===5){if(uR[0]-uR[4]===4){st=true;stH=uR[0];}if(uR.join(',')===('14,5,4,3,2')){st=true;stH=5;}}
+  const sf=flush&&st,q=counts[0]===4,fh=counts[0]===3&&counts[1]===2;
+  const tr=counts[0]===3,tp=counts[0]===2&&counts[1]===2,pa=counts[0]===2;
+  const cat=sf?8:q?7:fh?6:flush?5:st?4:tr?3:tp?2:pa?1:0;
+  const sorted=uR.slice().sort((a,b)=>(freq[b]-freq[a])||(b-a));
+  let tb=0;sorted.forEach((r,i)=>tb+=r*Math.pow(15,4-i));
+  if(sf)return 8e10+(stH===14?15:stH);
+  if(st)return 4e10+stH;
+  return cat*1e10+tb;
+}
+
+function evaluateOmaha(hole,board){
+  let best=-1;
+  for(const hp of combinations(hole,2))for(const bt of combinations(board,3)){const s=evaluate5([...hp,...bt]);if(s>best)best=s;}
+  return best;
+}
+
+function simulate(holes,board,iters=6000){
+  const n=holes.length,wins=new Array(n).fill(0),ties=new Array(n).fill(0);
+  const used=new Set([...holes.flat(),...board]);
+  const rem=buildDeck(used);const needed=5-board.length;
+  for(let i=0;i<iters;i++){
+    shuffle(rem);const b=[...board,...rem.slice(0,needed)];
+    const scores=holes.map(h=>evaluateOmaha(h,b));
+    const max=Math.max(...scores);const winners=scores.map(s=>s===max);
+    const wc=winners.filter(Boolean).length;
+    if(wc===1)wins[winners.indexOf(true)]++;
+    else winners.forEach((w,i)=>{if(w)ties[i]++;});
+  }
+  return holes.map((_,i)=>({win:wins[i]/iters*100,tie:ties[i]/iters*100,total:(wins[i]+ties[i]/2)/iters*100}));
+}
+
+document.getElementById('calcBtn').addEventListener('click',()=>{
+  const holes=[];
+  for(let p=1;p<=numPlayers;p++){
+    const c=(playerCards[p]||[]).filter(Boolean);
+    if(c.length!==4){document.getElementById('results').innerHTML=`<p class="info-msg" style="color:var(--red)">Player ${p} needs exactly 4 hole cards</p>`;return;}
+    holes.push(c);
+  }
+  const board=[...communityCards.flop,...communityCards.turn,...communityCards.river].filter(Boolean);
+  if(board.length>0&&board.length<3){document.getElementById('results').innerHTML=`<p class="info-msg" style="color:var(--red)">Flop needs 3 cards or leave empty</p>`;return;}
+  document.getElementById('results').innerHTML='<p class="info-msg">Simulating…</p>';
+  setTimeout(()=>{
+    const results=simulate(holes,board,board.length===5?1:6000);
+    const maxT=Math.max(...results.map(r=>r.total));
+    const div=document.getElementById('results');div.innerHTML='';
+    results.forEach((r,i)=>{
+      const row=document.createElement('div');row.className='result-row';
+      row.innerHTML=`<span class="result-name">P${i+1}</span>
+        <div class="bar-wrap"><div class="bar p${i+1}" style="width:${Math.max(r.total,1)}%"></div></div>
+        <span class="result-pct">${r.total.toFixed(1)}%</span>
+        ${r.total===maxT?'<span class="winner-badge">BEST</span>':''}`;
+      div.appendChild(row);
+    });
+    const note=document.createElement('p');note.className='info-msg';note.style.marginTop='8px';
+    note.textContent=board.length===5?'Exact result (full board)':'Based on 6,000 Monte Carlo simulations';
+    div.appendChild(note);
+  },10);
+});
+
+renderAll();
+</script>
+</body>
+</html>
