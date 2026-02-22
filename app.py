@@ -297,14 +297,23 @@ def detect():
     Returns: { "ok": true, "cards": [...], "debug": "<base64 jpeg>" }
     """
     try:
-        data  = request.get_json(force=True)
-        b64   = data.get('frame', '')
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No JSON body received'}), 400
+
+        b64 = data.get('frame', '')
         if not b64:
             return jsonify({'ok': False, 'error': 'No frame provided'}), 400
 
+        # Check opencv is available
+        try:
+            import cv2
+        except ImportError as e:
+            return jsonify({'ok': False, 'error': f'OpenCV not installed: {str(e)}'}), 500
+
         frame = decode_frame(b64)
         if frame is None:
-            return jsonify({'ok': False, 'error': 'Could not decode image'}), 400
+            return jsonify({'ok': False, 'error': 'Could not decode image — bad base64 or unsupported format'}), 400
 
         cards, debug_frame = detect_cards(frame)
         debug_b64 = encode_frame(debug_frame)
@@ -312,7 +321,9 @@ def detect():
         return jsonify({'ok': True, 'cards': cards, 'debug': debug_b64})
 
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        import traceback
+        print(f"[ERROR] /detect: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({'ok': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
 @app.route('/health')
