@@ -357,7 +357,7 @@ function startDetection() {
   debugCanvas.style.display = 'block';
   setStatus('green', 'Auto-detecting cards…');
   autoAssignBtn.disabled = false;
-  detectInterval = setInterval(sendFrame, 250); // 4 fps to server
+  detectInterval = setInterval(sendFrame, 1000); // 1 frame per second to server
 }
 
 function stopDetection() {
@@ -372,10 +372,15 @@ async function sendFrame() {
   const w = video.videoWidth, h = video.videoHeight;
   if (!w || !h) return;
 
-  captureCanvas.width = w; captureCanvas.height = h;
+  // Resize to max 640px wide before sending — keeps payload small
+  const maxW = 640;
+  const scale = Math.min(1, maxW / w);
+  const sw = Math.floor(w * scale), sh = Math.floor(h * scale);
+  captureCanvas.width = sw; captureCanvas.height = sh;
   const ctx = captureCanvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, w, h);
-  const b64 = captureCanvas.toDataURL('image/jpeg', 0.75);
+  ctx.drawImage(video, 0, 0, sw, sh);
+  // Low quality JPEG = tiny payload (~30-50kb instead of 500kb)
+  const b64 = captureCanvas.toDataURL('image/jpeg', 0.5);
 
   try {
     const r = await fetch(`${serverUrl}/detect`, {
